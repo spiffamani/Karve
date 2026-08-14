@@ -38,9 +38,13 @@ One page for operating the agent during the competition. The strategy details li
 
 ## Strategy levers (in `.env`, restart the agent to apply)
 
-- `KARVE_KELLY_FRACTION` (default 0.35) — global aggression. Raise toward 0.5 in week 2 if we're behind the leaders; lower if we're ahead and defending.
-- `KARVE_MIN_EDGE_*` — per-signal trade thresholds.
-- `KARVE_MAX_PER_MARKET` / `KARVE_MAX_PER_GROUP` — concentration caps.
+**Current mode: catch-up aggressive** — only trade outcomes we price at ≥95%, then size them hard (Kelly 0.55, up to 30% of bankroll per market).
+
+- `KARVE_MIN_OUTCOME_PROB` (default 0.95) — hard conviction floor. Skip anything we don't think is a near-lock.
+- `KARVE_MIN_CONFIDENCE` (default 0.85) — estimator trust floor before sizing is allowed.
+- `KARVE_KELLY_FRACTION` (default 0.55) — global aggression. Lower toward 0.35 if we're defending a top-3 lead.
+- `KARVE_MIN_EDGE_*` — per-signal trade thresholds (LLM only fires on already-resolved near-locks).
+- `KARVE_MAX_PER_MARKET` / `KARVE_MAX_PER_GROUP` — concentration caps (0.30 / 0.45 in catch-up mode).
 
 ## Emergencies
 

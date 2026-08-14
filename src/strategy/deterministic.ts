@@ -158,10 +158,16 @@ export async function estimateDeterministic(market: MarketSnapshot): Promise<Pro
       return clamp(pAboveLow - pAboveHigh, 0.001, 0.999);
     });
     const total = probs.reduce((a, b) => a + b, 0);
+    const normalized = probs.map((p) => p / total);
+    const peak = Math.max(...normalized);
+    // Near-locks (spot already deep in a bucket) get high trust for aggressive sizing.
+    const confidence = peak >= 0.95
+      ? clamp(0.92 + (peak - 0.95) * 1.5 - Math.max(0, days) * 0.005, 0.9, 0.98)
+      : clamp(0.9 - days * 0.02, 0.5, 0.9);
     return {
       source: "deterministic",
-      probs: probs.map((p) => p / total),
-      confidence: clamp(0.9 - days * 0.02, 0.5, 0.9),
+      probs: normalized,
+      confidence,
       reasoning: `${asset} spot=${view.spot.toFixed(2)}, dailyVol=${(view.dailyVol * 100).toFixed(2)}%, ${days.toFixed(1)}d to resolution; lognormal bucket probabilities`,
       correlationGroup: `crypto:${asset}`,
     };
@@ -193,10 +199,14 @@ export async function estimateDeterministic(market: MarketSnapshot): Promise<Pro
   pYes = clamp(pYes, 0.005, 0.995);
 
   const probs = market.outcomes.map((_, i) => (i === yesIdx ? pYes : 1 - pYes));
+  const peak = Math.max(pYes, 1 - pYes);
+  const confidence = peak >= 0.95
+    ? clamp(0.92 + (peak - 0.95) * 1.5 - Math.max(0, days) * 0.005, 0.9, 0.98)
+    : clamp(0.9 - days * 0.02, 0.5, 0.9);
   return {
     source: "deterministic",
     probs,
-    confidence: clamp(0.9 - days * 0.02, 0.5, 0.9),
+    confidence,
     reasoning: `${asset} spot=${view.spot.toFixed(2)}, threshold=${threshold}, dailyVol=${(view.dailyVol * 100).toFixed(2)}%, ${days.toFixed(1)}d left, ${isTouch ? "touch" : "terminal"} model → P(yes)=${(pYes * 100).toFixed(1)}%`,
     correlationGroup: `crypto:${asset}`,
   };

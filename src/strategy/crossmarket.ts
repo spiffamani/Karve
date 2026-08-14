@@ -202,10 +202,16 @@ export async function estimateCrossMarket(market: MarketSnapshot): Promise<Proba
       if (mapping) {
         const rawProbs = mapping.map((i) => clamp(direct!.outcomePrices[i]!, 0.005, 0.995));
         const total = rawProbs.reduce((a, b) => a + b, 0);
+        const probs = rawProbs.map((p) => p / total);
+        const peak = Math.max(...probs);
+        // Direct Polymarket links are the gold standard — size hard on near-locks.
+        const confidence = peak >= 0.95
+          ? clamp(0.93 + Math.min(1, direct.volume24h / 50_000) * 0.05, 0.93, 0.98)
+          : 0.9;
         return {
           source: "crossmarket",
-          probs: rawProbs.map((p) => p / total),
-          confidence: 0.9,
+          probs,
+          confidence,
           reasoning: `DIRECT dataSources link → Polymarket "${direct.question}" prices ${direct.outcomePrices.map((p) => (p * 100).toFixed(0) + "%").join("/")} (24h vol $${Math.round(direct.volume24h)})`,
           correlationGroup: `poly:${direct.id}`,
         };
@@ -254,10 +260,18 @@ export async function estimateCrossMarket(market: MarketSnapshot): Promise<Proba
   const total = rawProbs.reduce((a, b) => a + b, 0);
   if (total <= 0) return null;
 
+  const probs = rawProbs.map((p) => p / total);
+  const peak = Math.max(...probs);
+  const baseConf = clamp(0.75 * Math.min(1, best.volume24h / 10_000), 0.35, 0.75);
+  // Fuzzy matches only clear the conviction gate when Polymarket itself is a near-lock
+  // and volume backs it — otherwise leave them for human-approved matches only.
+  const confidence = peak >= 0.95
+    ? clamp(Math.max(baseConf, 0.85) + Math.min(1, best.volume24h / 50_000) * 0.1, 0.85, 0.95)
+    : baseConf;
   return {
     source: "crossmarket",
-    probs: rawProbs.map((p) => p / total),
-    confidence: clamp(0.75 * Math.min(1, best.volume24h / 10_000), 0.35, 0.75),
+    probs,
+    confidence,
     reasoning: `Polymarket "${best.question}" (24h vol $${Math.round(best.volume24h)}) prices ${best.outcomePrices.map((p) => (p * 100).toFixed(0) + "%").join("/")}; match score ${bestScore.toFixed(2)}`,
     correlationGroup: `poly:${best.id}`,
   };
