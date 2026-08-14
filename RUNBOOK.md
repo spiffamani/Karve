@@ -38,13 +38,15 @@ One page for operating the agent during the competition. The strategy details li
 
 ## Strategy levers (in `.env`, restart the agent to apply)
 
-**Current mode: catch-up aggressive** — only trade outcomes we price at ≥95%, then size them hard (Kelly 0.55, up to 30% of bankroll per market).
+**Current mode: max-aggression catch-up** — trade outcomes we price at ≥70%, Kelly 0.75, up to 40%/60% bankroll per market/group, and sell weak holdings when cash is starved.
 
-- `KARVE_MIN_OUTCOME_PROB` (default 0.95) — hard conviction floor. Skip anything we don't think is a near-lock.
-- `KARVE_MIN_CONFIDENCE` (default 0.85) — estimator trust floor before sizing is allowed.
-- `KARVE_KELLY_FRACTION` (default 0.55) — global aggression. Lower toward 0.35 if we're defending a top-3 lead.
-- `KARVE_MIN_EDGE_*` — per-signal trade thresholds (LLM only fires on already-resolved near-locks).
-- `KARVE_MAX_PER_MARKET` / `KARVE_MAX_PER_GROUP` — concentration caps (0.30 / 0.45 in catch-up mode).
+- `KARVE_MIN_OUTCOME_PROB` (default 0.70) — conviction floor (was 0.95; that starved trades).
+- `KARVE_MIN_CONFIDENCE` (default 0.55) — estimator trust floor.
+- `KARVE_KELLY_FRACTION` (default 0.75) — global aggression.
+- `KARVE_EDGE_SIZE_BOOST` (default 1.5) — extra size on fat edges.
+- `KARVE_ROTATE_*` — sell weak positions when cash < 8% of bankroll so we can redeploy.
+- `KARVE_MIN_EDGE_*` — per-signal trade thresholds.
+- `KARVE_MAX_PER_MARKET` / `KARVE_MAX_PER_GROUP` — concentration caps (0.40 / 0.60).
 
 ## Emergencies
 

@@ -4,7 +4,8 @@ import { executeIntent } from "./executor.js";
 import { journal } from "./journal.js";
 import { decideTrade, loadPortfolio, savePortfolio } from "./risk.js";
 import { estimateMarket } from "./strategy/index.js";
-import { formatProb, sleep } from "./util.js";
+import type { Address } from "./types.js";
+import { formatProb, sleep, tokensToNumber } from "./util.js";
 
 async function notifyDiscord(message: string): Promise<void> {
   if (!CONFIG.discordWebhookUrl) return;
@@ -31,6 +32,73 @@ async function reconcilePortfolio(delphi: Delphi): Promise<void> {
   if (portfolio.positions.length !== before) savePortfolio(portfolio);
 }
 
+/**
+ * When cash is too low to punch new trades, sell positions we've lost conviction
+ * on so capital can rotate into fresher edges.
+ */
+async function rotateWeakPositions(delphi: Delphi, markets: Awaited<ReturnType<Delphi["listOpenMarkets"]>>): Promise<number> {
+  const mark = await delphi.bankrollMark();
+  if (mark.bankroll <= 0) return 0;
+  if (mark.cash / mark.bankroll >= CONFIG.rotateCashTriggerFraction) return 0;
+
+  const open = (await delphi.openPositions()).filter((p) => p.marketStatus === "open");
+  if (open.length === 0) return 0;
+
+  const byAddress = new Map(markets.map((m) => [m.address.toLowerCase(), m]));
+  let freed = 0;
+
+  for (const pos of open) {
+    const market = byAddress.get(pos.market.toLowerCase());
+    if (!market) continue;
+    try {
+      const estimate = await estimateMarket(market);
+      if (!estimate) continue;
+      const ourProb = estimate.probs[pos.outcomeIdx] ?? 0;
+      const mktProb = market.impliedProbs[pos.outcomeIdx] ?? 0;
+      const edge = ourProb - mktProb;
+      const shouldSell = edge <= CONFIG.rotateSellEdge || ourProb <= CONFIG.rotateSellMaxProb;
+      if (!shouldSell) continue;
+
+      if (CONFIG.dryRun) {
+        journal("decision", {
+          note: "rotate would sell",
+          market: market.address,
+          outcomeIdx: pos.outcomeIdx,
+          ourProb,
+          edge,
+          shares: pos.shares.toString(),
+        });
+        continue;
+      }
+
+      const { transactionHash, tokensOut } = await delphi.sellShares(pos.market as Address, pos.outcomeIdx, pos.shares);
+      const amount = tokensToNumber(tokensOut);
+      freed += amount;
+      journal("trade", {
+        action: "sell",
+        market: market.address,
+        question: market.question.slice(0, 140),
+        outcome: market.outcomes[pos.outcomeIdx],
+        outcomeIdx: pos.outcomeIdx,
+        ourProb,
+        edge,
+        tokensOut: amount,
+        transactionHash,
+        reason: edge <= CONFIG.rotateSellEdge ? "edge flipped/weak" : "conviction collapsed",
+      });
+      await notifyDiscord(
+        `Karve SOLD (rotate): "${market.question.slice(0, 100)}" → ${market.outcomes[pos.outcomeIdx]} ` +
+        `(+${amount.toFixed(1)} TST, edge ${(edge * 100).toFixed(1)}%)`,
+      );
+    } catch (err) {
+      journal("error", { where: "rotateWeakPositions", market: pos.market, err: String((err as Error).message).slice(0, 300) });
+    }
+  }
+
+  if (freed > 0) await reconcilePortfolio(delphi);
+  return freed;
+}
+
 /** In dry-run no position is recorded, so remember session decisions to avoid re-logging the same trade every scan. */
 const dryRunDecisions = new Set<string>();
 
@@ -39,14 +107,20 @@ async function scanCycle(delphi: Delphi): Promise<void> {
   const recovered = await delphi.settlementSweep();
   await reconcilePortfolio(delphi);
 
-  const mark = await delphi.bankrollMark();
+  let mark = await delphi.bankrollMark();
   const markets = await delphi.listOpenMarkets();
+
+  // Free capital from weak holdings when we're cash-starved.
+  const rotated = await rotateWeakPositions(delphi, markets);
+  if (rotated > 0) mark = await delphi.bankrollMark();
+
   journal("scan", {
     openMarkets: markets.length,
     cash: mark.cash,
     positionValue: Number(mark.positionValue.toFixed(2)),
     bankroll: Number(mark.bankroll.toFixed(2)),
     recovered,
+    rotated: Number(rotated.toFixed(2)),
   });
 
   const portfolio = loadPortfolio();

@@ -102,7 +102,10 @@ export function decideTrade(
   }
 
   const kellyStar = (q - p) / (1 - p);
-  let fraction = kellyStar * CONFIG.kellyFraction * estimate.confidence;
+  // Confidence dampens less hard than before (sqrt) so good edges still punch.
+  // Fat edges get an extra size boost for catch-up aggression.
+  let fraction = kellyStar * CONFIG.kellyFraction * Math.sqrt(estimate.confidence);
+  fraction *= 1 + CONFIG.edgeSizeBoost * bestEdge;
   if (fraction <= 0) return { action: "skip", reason: "non-positive Kelly fraction", market: market.address };
 
   let budget = fraction * bankroll;

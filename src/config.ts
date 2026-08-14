@@ -26,55 +26,60 @@ export const CONFIG = {
   // ── Decision thresholds (absolute probability edge, 0..1) ────────────────
   // Edge = ourProbability - marketImpliedProbability, evaluated against the
   // EFFECTIVE fill price from a real quote (includes LMSR impact + fees).
-  // Catch-up mode (behind top 3): skip thin edges; only punch when conviction is high.
+  // MAX-AGGRESSION catch-up: take more edges, size them hard.
   minEdge: {
-    deterministic: num("KARVE_MIN_EDGE_DETERMINISTIC", 0.03),
-    crossmarket: num("KARVE_MIN_EDGE_CROSSMARKET", 0.05),
-    favorite: num("KARVE_MIN_EDGE_FAVORITE", 0.03),
-    llm: num("KARVE_MIN_EDGE_LLM", 0.08),
+    deterministic: num("KARVE_MIN_EDGE_DETERMINISTIC", 0.02),
+    crossmarket: num("KARVE_MIN_EDGE_CROSSMARKET", 0.03),
+    favorite: num("KARVE_MIN_EDGE_FAVORITE", 0.02),
+    llm: num("KARVE_MIN_EDGE_LLM", 0.05),
   },
 
-  // Hard conviction floor: we only buy an outcome if OUR estimated probability
-  // for it is at least this. "95%+ on every trade" lives here.
-  minOutcomeProbability: num("KARVE_MIN_OUTCOME_PROB", 0.95),
-  // Sizing trust floor — estimators that can't clear this never reach the book.
-  minConfidence: num("KARVE_MIN_CONFIDENCE", 0.85),
+  // Conviction floor on OUR probability for the chosen outcome.
+  // 0.70 = hunt real edges without waiting for near-locks only.
+  minOutcomeProbability: num("KARVE_MIN_OUTCOME_PROB", 0.70),
+  // Estimator trust floor before we size.
+  minConfidence: num("KARVE_MIN_CONFIDENCE", 0.55),
 
-  // Favorite-harvesting: only buy outcomes we believe are at least this
-  // likely, when the market still prices them below our floor estimate.
-  favoriteMinProbability: num("KARVE_FAVORITE_MIN_PROB", 0.92),
+  // Favorite-harvesting: buy strong favorites while still discounted.
+  favoriteMinProbability: num("KARVE_FAVORITE_MIN_PROB", 0.78),
 
-  // ── Position sizing (aggressive catch-up for tournament P&L) ──────────────
-  // Fraction of full Kelly to bet. 1.0 = full Kelly (too violent for noisy
-  // edges). 0.55 punches hard on the rare 95%+ locks we actually take.
-  kellyFraction: num("KARVE_KELLY_FRACTION", 0.55),
+  // ── Position sizing (tournament catch-up) ─────────────────────────────────
+  // 0.75 of Kelly — violent but necessary when chasing top 3 with days left.
+  kellyFraction: num("KARVE_KELLY_FRACTION", 0.75),
+  // Extra size multiplier when edge is fat (applied as 1 + edgeBoost * edge).
+  edgeSizeBoost: num("KARVE_EDGE_SIZE_BOOST", 1.5),
   // Hard caps as fractions of CURRENT total bankroll (cash + position value).
-  maxFractionPerMarket: num("KARVE_MAX_PER_MARKET", 0.30),
-  maxFractionPerGroup: num("KARVE_MAX_PER_GROUP", 0.45),
-  // Never let cash drop below this fraction of bankroll (dry powder for
-  // late, better opportunities). Lower while chasing the board.
-  cashFloorFraction: num("KARVE_CASH_FLOOR", 0.05),
+  maxFractionPerMarket: num("KARVE_MAX_PER_MARKET", 0.40),
+  maxFractionPerGroup: num("KARVE_MAX_PER_GROUP", 0.60),
+  // Keep almost no idle cash — redeploy.
+  cashFloorFraction: num("KARVE_CASH_FLOOR", 0.01),
   // Smallest trade worth the gas + journal noise (collateral tokens).
   minTradeTokens: num("KARVE_MIN_TRADE_TOKENS", 1),
 
+  // ── Rotation (sell weak positions to free cash) ───────────────────────────
+  // If liquid cash falls below this fraction of bankroll, try selling losers.
+  rotateCashTriggerFraction: num("KARVE_ROTATE_CASH_TRIGGER", 0.08),
+  // Sell a held outcome when our edge on it is at or below this (can be negative).
+  rotateSellEdge: num("KARVE_ROTATE_SELL_EDGE", -0.02),
+  // Also sell if ourProb on the held outcome drops below this.
+  rotateSellMaxProb: num("KARVE_ROTATE_SELL_MAX_PROB", 0.45),
+
   // ── Execution ─────────────────────────────────────────────────────────────
-  slippageBps: BigInt(num("KARVE_SLIPPAGE_BPS", 300)),
+  slippageBps: BigInt(num("KARVE_SLIPPAGE_BPS", 400)),
   // Re-check: if the effective average fill price implies our edge shrinks
   // below this fraction of the original signal edge, abort the trade.
-  minEdgeRetainedAfterImpact: num("KARVE_MIN_EDGE_RETAINED", 0.5),
+  minEdgeRetainedAfterImpact: num("KARVE_MIN_EDGE_RETAINED", 0.4),
 
   // ── Scheduling (milliseconds) ─────────────────────────────────────────────
-  // Faster loop while chasing: more chances to catch near-locks before others.
-  scanIntervalMs: num("KARVE_SCAN_INTERVAL_MS", 2 * 60_000),
-  sweepIntervalMs: num("KARVE_SWEEP_INTERVAL_MS", 10 * 60_000),
-  // Markets resolving within this window get re-scanned on every loop.
-  // Wider window = more favorite-harvest opportunities near resolution.
-  hotWindowMs: num("KARVE_HOT_WINDOW_MS", 24 * 3_600_000),
+  scanIntervalMs: num("KARVE_SCAN_INTERVAL_MS", 90_000),
+  sweepIntervalMs: num("KARVE_SWEEP_INTERVAL_MS", 8 * 60_000),
+  // Favorite harvest window.
+  hotWindowMs: num("KARVE_HOT_WINDOW_MS", 48 * 3_600_000),
 
   // ── Safety ────────────────────────────────────────────────────────────────
   dryRun: bool("KARVE_DRY_RUN", true), // trades are logged but NOT sent unless explicitly disabled
   minEthReserve: num("KARVE_MIN_ETH_RESERVE", 0.0005), // alert threshold, in ETH
-  maxOpenPositions: num("KARVE_MAX_OPEN_POSITIONS", 40),
+  maxOpenPositions: num("KARVE_MAX_OPEN_POSITIONS", 50),
 
   // ── Optional integrations ────────────────────────────────────────────────
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",
