@@ -40,6 +40,8 @@ export function groupKey(market: MarketSnapshot, estimate: ProbabilityEstimate):
 export interface SizingContext {
   cashTokens: number;
   portfolio: PortfolioState;
+  /** Live mark-to-market bankroll (cash + open position value). When set, used instead of cash+local portfolio cost. */
+  bankroll?: number;
 }
 
 export type SizingResult =
@@ -67,11 +69,33 @@ export function decideTrade(
 
   const q = estimate.probs[bestIdx]!;
   const p = market.impliedProbs[bestIdx]!;
+
+  // Conviction gates: only punch when we believe the outcome is a near-lock
+  // and the estimator itself is trustworthy enough to size hard against.
+  if (q < CONFIG.minOutcomeProbability) {
+    return {
+      action: "skip",
+      reason: `ourProb ${(q * 100).toFixed(1)}% < ${CONFIG.minOutcomeProbability * 100}% conviction floor`,
+      market: market.address,
+      edge: bestEdge,
+    };
+  }
+  if (estimate.confidence < CONFIG.minConfidence) {
+    return {
+      action: "skip",
+      reason: `confidence ${(estimate.confidence * 100).toFixed(0)}% < ${CONFIG.minConfidence * 100}% floor`,
+      market: market.address,
+      edge: bestEdge,
+    };
+  }
+
   if (p >= 0.995) return { action: "skip", reason: "price already at ceiling", market: market.address };
 
   const positionCost = (posList: OpenPositionRecord[]) => posList.reduce((a, x) => a + x.costTokens, 0);
   const openCost = positionCost(ctx.portfolio.positions);
-  const bankroll = ctx.cashTokens + openCost;
+  // Prefer live on-chain mark (cash + MTM) when the loop provides it — local
+  // portfolio.json only tracks trades this process recorded and under-sizes hard.
+  const bankroll = ctx.bankroll ?? (ctx.cashTokens + openCost);
 
   if (ctx.portfolio.positions.length >= CONFIG.maxOpenPositions) {
     return { action: "skip", reason: `max open positions (${CONFIG.maxOpenPositions})`, market: market.address };
@@ -92,8 +116,9 @@ export function decideTrade(
   const groupExposure = positionCost(ctx.portfolio.positions.filter((x) => x.group === group));
   budget = Math.min(budget, CONFIG.maxFractionPerGroup * bankroll - groupExposure);
 
-  // Cash floor.
-  budget = Math.min(budget, ctx.cashTokens - CONFIG.cashFloorFraction * bankroll);
+  // Cash floor — keep a slice of LIQUID cash, not of total bankroll.
+  // (Flooring against full MTM bankroll stranded us when most capital was in open positions.)
+  budget = Math.min(budget, ctx.cashTokens * (1 - CONFIG.cashFloorFraction));
 
   if (budget < CONFIG.minTradeTokens) {
     return { action: "skip", reason: `budget ${budget.toFixed(2)} below minimum after caps`, market: market.address, edge: bestEdge };

@@ -35,9 +35,19 @@ async function reconcilePortfolio(delphi: Delphi): Promise<void> {
 const dryRunDecisions = new Set<string>();
 
 async function scanCycle(delphi: Delphi): Promise<void> {
-  const balances = await delphi.balances();
+  // Redeem winners BEFORE sizing so recovered cash can be redeployed this cycle.
+  const recovered = await delphi.settlementSweep();
+  await reconcilePortfolio(delphi);
+
+  const mark = await delphi.bankrollMark();
   const markets = await delphi.listOpenMarkets();
-  journal("scan", { openMarkets: markets.length, cash: balances.collateral, eth: balances.eth });
+  journal("scan", {
+    openMarkets: markets.length,
+    cash: mark.cash,
+    positionValue: Number(mark.positionValue.toFixed(2)),
+    bankroll: Number(mark.bankroll.toFixed(2)),
+    recovered,
+  });
 
   const portfolio = loadPortfolio();
   let evaluated = 0;
@@ -45,8 +55,10 @@ async function scanCycle(delphi: Delphi): Promise<void> {
 
   // Single cash tracker for the whole cycle. Before funding arrives, dry-run
   // rehearses with a placeholder bankroll; live mode always uses real cash.
-  let cash = balances.collateral;
+  let cash = mark.cash;
   if (CONFIG.dryRun && cash === 0) cash = 100;
+  // Shrink bankroll as we spend cash this cycle (positions already marked).
+  let bankroll = Math.max(mark.bankroll, cash);
 
   for (const market of markets) {
     try {
@@ -65,6 +77,7 @@ async function scanCycle(delphi: Delphi): Promise<void> {
       const decision = decideTrade(market, estimate, {
         cashTokens: cash,
         portfolio,
+        bankroll,
       });
 
       if (decision.action === "skip") {
@@ -81,7 +94,9 @@ async function scanCycle(delphi: Delphi): Promise<void> {
       const result = await executeIntent(delphi, decision.intent);
       if (result.executed || result.dryRun) {
         traded++;
-        cash -= Number(result.tokensIn ?? 0n) / 1e6;
+        const spent = Number(result.tokensIn ?? 0n) / 1e6;
+        cash -= spent;
+        bankroll = Math.max(cash, bankroll - spent);
         await notifyDiscord(
           `${CONFIG.dryRun ? "[DRY-RUN] " : ""}Karve ${result.executed ? "traded" : "would trade"}: ` +
           `"${market.question.slice(0, 100)}" → ${market.outcomes[decision.intent.outcomeIdx]} ` +
@@ -93,7 +108,7 @@ async function scanCycle(delphi: Delphi): Promise<void> {
     }
   }
 
-  journal("scan", { done: true, evaluated, traded });
+  journal("scan", { done: true, evaluated, traded, cashLeft: Number(cash.toFixed(2)) });
 }
 
 async function sweepCycle(delphi: Delphi): Promise<void> {

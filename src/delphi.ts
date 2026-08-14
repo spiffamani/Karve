@@ -292,6 +292,19 @@ export class Delphi {
       try {
         const status = await withRetry("getMarketStatus", () => this.client.getMarketStatus(market));
         if (status === "settled") {
+          // Quote first: redeem reverts (0x50cd9791) when we hold only losing shares.
+          let quoteTokens = 0n;
+          try {
+            const quote = await this.client.quoteRedeem({ marketAddress: market });
+            quoteTokens = BigInt(quote.tokensOut);
+          } catch {
+            journal("skip", { market, reason: "settled but no winning shares to redeem (dead position)" });
+            continue;
+          }
+          if (quoteTokens === 0n) {
+            journal("skip", { market, reason: "settled redeem quote is zero" });
+            continue;
+          }
           const { tokensOut, transactionHash } = await withRetry("redeemMarket", () =>
             this.client.redeemMarket({ marketAddress: market }), { attempts: 2 });
           const amount = tokensToNumber(tokensOut as bigint);
@@ -307,5 +320,35 @@ export class Delphi {
       }
     }
     return recovered;
+  }
+
+  /**
+   * Mark-to-market bankroll for sizing: cash + (shares × spot price) for every
+   * non-settled open position. Settled losers contribute 0; settled winners are
+   * assumed redeemed by settlementSweep before this runs.
+   */
+  async bankrollMark(): Promise<{ cash: number; positionValue: number; bankroll: number }> {
+    const balances = await this.balances();
+    const positions = await this.openPositions();
+    let positionValue = 0;
+    // Cache probs per market so multi-outcome positions don't re-hit RPC.
+    const probCache = new Map<string, number[]>();
+    for (const p of positions) {
+      if (p.marketStatus === "settled" || p.marketStatus === "expired" || p.marketStatus === "failed") continue;
+      try {
+        let probs = probCache.get(p.market);
+        if (!probs) {
+          // Fetch enough slots for this outcome index; over-fetching is fine.
+          probs = await this.impliedProbabilities(p.market, Math.max(p.outcomeIdx + 1, 2));
+          probCache.set(p.market, probs);
+        }
+        const px = probs[p.outcomeIdx] ?? 0;
+        positionValue += sharesToNumber(p.shares) * px;
+      } catch {
+        // If mark fails, fall back to ignoring that position rather than blocking the scan.
+      }
+    }
+    const cash = balances.collateral;
+    return { cash, positionValue, bankroll: cash + positionValue };
   }
 }

@@ -115,10 +115,16 @@ interface CachedEstimate {
 
 export async function estimateLlm(market: MarketSnapshot): Promise<ProbabilityEstimate | null> {
   if (!CONFIG.geminiApiKey) return null;
+  // Hard-off switch still honored if someone sets min edge ≥ 1.
+  if (CONFIG.minEdge.llm >= 1) return null;
 
   const cache = loadState<Record<string, CachedEstimate>>("llm-cache", {});
   const cached = cache[market.address];
   if (cached && Date.now() - cached.at < CACHE_TTL_MS && cached.probs.length === market.outcomes.length) {
+    const peak = Math.max(...cached.probs);
+    const horizon = market.resolvesAt ?? market.settlesAt;
+    const windowStillOpen = horizon !== null && horizon.getTime() > Date.now() + 60 * 60_000;
+    if (!cached.alreadyResolved || !cached.usedSources || peak < CONFIG.minOutcomeProbability || windowStillOpen) return null;
     return toEstimate(cached.probs, cached.reasoning + " (cached)", cached.alreadyResolved === true, cached.usedSources === true);
   }
 
@@ -170,6 +176,16 @@ export async function estimateLlm(market: MarketSnapshot): Promise<ProbabilityEs
 
     cache[market.address] = { probs: normalized, reasoning: parsed.reasoning ?? "", alreadyResolved, usedSources, at: Date.now() };
     saveState("llm-cache", cache);
+
+    // Catch-up mode: only surface LLM estimates that are already-resolved near-locks.
+    // Speculative forecasts never clear the 95% conviction bar with enough trust.
+    const peak = Math.max(...normalized);
+    const horizon = market.resolvesAt ?? market.settlesAt;
+    // Never trust "already resolved" while the market's own resolution window is still open.
+    const windowStillOpen = horizon !== null && horizon.getTime() > Date.now() + 60 * 60_000;
+    if (!alreadyResolved || !usedSources || peak < CONFIG.minOutcomeProbability || windowStillOpen) {
+      return null;
+    }
     return toEstimate(normalized, parsed.reasoning ?? "", alreadyResolved, usedSources);
   } catch (err) {
     journal("error", { where: "estimateLlm", market: market.address, err: String((err as Error).message).slice(0, 300) });
@@ -178,11 +194,14 @@ export async function estimateLlm(market: MarketSnapshot): Promise<ProbabilityEs
 }
 
 function toEstimate(probs: number[], reasoning: string, alreadyResolved: boolean, usedSources: boolean): ProbabilityEstimate {
+  const peak = Math.max(...probs);
   return {
     source: "llm",
     probs,
-    // Reading a settled fact off the official source deserves more trust than forecasting.
-    confidence: alreadyResolved ? 0.75 : usedSources ? 0.55 : 0.4,
+    // Official-source confirmed resolution = size like a deterministic lock.
+    confidence: alreadyResolved && usedSources && peak >= 0.95
+      ? clamp(0.94 + (peak - 0.95) * 2, 0.94, 0.98)
+      : alreadyResolved ? 0.75 : usedSources ? 0.55 : 0.4,
     reasoning: `Gemini${alreadyResolved ? " (event already resolved)" : ""}${usedSources ? " [read official sources]" : ""}: ${reasoning}`.slice(0, 600),
   };
 }
