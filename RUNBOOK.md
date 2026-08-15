@@ -38,15 +38,13 @@ One page for operating the agent during the competition. The strategy details li
 
 ## Strategy levers (in `.env`, restart the agent to apply)
 
-**Current mode: max-aggression catch-up** — trade outcomes we price at ≥70%, Kelly 0.75, up to 40%/60% bankroll per market/group, and sell weak holdings when cash is starved.
+**Current mode: WAR / all-in** — cash was ~0 so we couldn't trade. Agent now concentrates into the top 3 edges (sells the rest when cash-starved), Kelly ~0.95, up to 65% per market, scans every 45s, soonest markets first.
 
-- `KARVE_MIN_OUTCOME_PROB` (default 0.70) — conviction floor (was 0.95; that starved trades).
-- `KARVE_MIN_CONFIDENCE` (default 0.55) — estimator trust floor.
-- `KARVE_KELLY_FRACTION` (default 0.75) — global aggression.
-- `KARVE_EDGE_SIZE_BOOST` (default 1.5) — extra size on fat edges.
-- `KARVE_ROTATE_*` — sell weak positions when cash < 8% of bankroll so we can redeploy.
-- `KARVE_MIN_EDGE_*` — per-signal trade thresholds.
-- `KARVE_MAX_PER_MARKET` / `KARVE_MAX_PER_GROUP` — concentration caps (0.40 / 0.60).
+- `KARVE_MIN_OUTCOME_PROB` (default 0.55)
+- `KARVE_KELLY_FRACTION` (default 0.95)
+- `KARVE_MAX_KEEP_POSITIONS` (default 3) — sell everything else when cash-starved
+- `KARVE_ROTATE_CASH_TRIGGER` (default 0.12)
+- `KARVE_MAX_PER_MARKET` / `KARVE_MAX_PER_GROUP` (0.65 / 0.85)
 
 ## Emergencies
 
