@@ -20,7 +20,7 @@ interface PolyMarket {
 
 let polyCache: { markets: PolyMarket[]; fetchedAt: number } | null = null;
 const POLY_CACHE_TTL_MS = 10 * 60_000;
-const AUTO_MATCH_SCORE = 0.65;
+const AUTO_MATCH_SCORE = 0.75;
 const REVIEW_MATCH_SCORE = 0.4;
 
 function parsePolyRow(row: Record<string, unknown>): PolyMarket | null {

@@ -19,7 +19,7 @@ export interface MarketSnapshot {
   marketUrl: string;
 }
 
-export type SignalSource = "deterministic" | "crossmarket" | "favorite" | "llm";
+export type SignalSource = "deterministic" | "crossmarket" | "facts" | "favorite" | "llm";
 
 /** A strategy module's opinion about one market. */
 export interface ProbabilityEstimate {

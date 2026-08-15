@@ -58,9 +58,12 @@ async function rotateWeakPositions(delphi: Delphi, markets: Awaited<ReturnType<D
     if (!market) continue;
     try {
       const estimate = await estimateMarket(market);
-      const ourProb = estimate ? (estimate.probs[pos.outcomeIdx] ?? 0) : 0;
-      const mktProb = estimate ? (market.impliedProbs[pos.outcomeIdx] ?? 0) : 1;
-      const edge = estimate ? ourProb - mktProb : -1;
+      // No live read → HOLD. Missing estimate used to look like "0% conviction" and we sold winners.
+      if (!estimate) continue;
+      if (estimate.source === "deterministic" || estimate.source === "facts") continue;
+      const ourProb = estimate.probs[pos.outcomeIdx] ?? 0;
+      const mktProb = market.impliedProbs[pos.outcomeIdx] ?? 0;
+      const edge = ourProb - mktProb;
       const weak = edge <= CONFIG.rotateSellEdge || ourProb <= CONFIG.rotateSellMaxProb;
       if (weak) weakOnes.push({ market, pos, ourProb, edge });
     } catch (err) {

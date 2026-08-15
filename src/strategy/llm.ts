@@ -115,21 +115,20 @@ interface CachedEstimate {
 
 export async function estimateLlm(market: MarketSnapshot): Promise<ProbabilityEstimate | null> {
   if (!CONFIG.geminiApiKey) return null;
-  // Hard-off switch still honored if someone sets min edge ≥ 1.
   if (CONFIG.minEdge.llm >= 1) return null;
+
+  // Fact-checker only: never call Gemini on a market whose resolution window is still open.
+  const horizon = market.resolvesAt ?? market.settlesAt;
+  const windowStillOpen = horizon === null || horizon.getTime() > Date.now() + 30 * 60_000;
+  if (windowStillOpen) return null;
 
   const cache = loadState<Record<string, CachedEstimate>>("llm-cache", {});
   const cached = cache[market.address];
   if (cached && Date.now() - cached.at < CACHE_TTL_MS && cached.probs.length === market.outcomes.length) {
+    if (!cached.alreadyResolved || !cached.usedSources) return null;
     const peak = Math.max(...cached.probs);
     if (peak < CONFIG.minOutcomeProbability) return null;
-    // Already-resolved claims still need sources + a closed window.
-    if (cached.alreadyResolved) {
-      const horizon = market.resolvesAt ?? market.settlesAt;
-      const windowStillOpen = horizon !== null && horizon.getTime() > Date.now() + 60 * 60_000;
-      if (!cached.usedSources || windowStillOpen) return null;
-    }
-    return toEstimate(cached.probs, cached.reasoning + " (cached)", cached.alreadyResolved === true, cached.usedSources === true);
+    return toEstimate(cached.probs, cached.reasoning + " (cached)", true, true);
   }
 
   const resolutionCriteria = String((market.metadata as Record<string, unknown>)?.resolutionCriteria ?? "");
@@ -138,6 +137,7 @@ export async function estimateLlm(market: MarketSnapshot): Promise<ProbabilityEs
     : [];
   const sourceContext = await fetchSourceContext(dataSources);
   const usedSources = sourceContext.length > 0;
+  if (!usedSources) return null;
 
   const prompt = [
     `Today is ${new Date().toUTCString()}.`,
@@ -181,17 +181,10 @@ export async function estimateLlm(market: MarketSnapshot): Promise<ProbabilityEs
     cache[market.address] = { probs: normalized, reasoning: parsed.reasoning ?? "", alreadyResolved, usedSources, at: Date.now() };
     saveState("llm-cache", cache);
 
+    if (!alreadyResolved || !usedSources) return null;
     const peak = Math.max(...normalized);
     if (peak < CONFIG.minOutcomeProbability) return null;
-
-    // "Already resolved" still requires sources + a closed resolution window.
-    if (alreadyResolved) {
-      const horizon = market.resolvesAt ?? market.settlesAt;
-      const windowStillOpen = horizon !== null && horizon.getTime() > Date.now() + 60 * 60_000;
-      if (!usedSources || windowStillOpen) return null;
-    }
-    // Speculative forecasts are allowed in max-aggression mode when peak clears the floor.
-    return toEstimate(normalized, parsed.reasoning ?? "", alreadyResolved, usedSources);
+    return toEstimate(normalized, parsed.reasoning ?? "", true, true);
   } catch (err) {
     journal("error", { where: "estimateLlm", market: market.address, err: String((err as Error).message).slice(0, 300) });
     return null;

@@ -38,12 +38,12 @@ One page for operating the agent during the competition. The strategy details li
 
 ## Strategy levers (in `.env`, restart the agent to apply)
 
-**Current mode: hold winners, no thrash** — prior WAR rotate sold→rebought the same favorites (Jaguars/Mississippi) and burned LMSR spread. Now: sell only truly weak books, 2h rebuy cooldown after any sell, favorite needs real edge.
+**Current mode: facts only** — Gemini no longer forecasts open events. Favorite bump is off. Trades need a real number (crypto model, USGS, tight Polymarket match, or a source page on an already-finished event). Hold until settlement; don't sell winners for cash.
 
-- `KARVE_SELL_REBUY_COOLDOWN_MS` (default 2h) — blocks wash trades
-- `KARVE_ROTATE_SELL_EDGE` (default 0) — only sell when edge ≤ 0
-- `KARVE_MAX_SELLS_PER_SCAN` (default 1)
-- `KARVE_KELLY_FRACTION` (default 0.95) when cash exists to deploy
+- `KARVE_MIN_EDGE_FAVORITE=1.0` — disables fake +5% harvest
+- `KARVE_MIN_EDGE_FACTS` — USGS quakes / Mississippi discharge
+- `KARVE_KELLY_FRACTION=0.55` — size real edges, not 0.95 on guesses
+- `KARVE_SELL_REBUY_COOLDOWN_MS` — 2h block after any sell
 
 ## Emergencies
 

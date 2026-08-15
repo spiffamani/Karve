@@ -24,26 +24,25 @@ export const CONFIG = {
   network: process.env.DELPHI_NETWORK ?? "competition-testnet",
 
   // ── Decision thresholds ───────────────────────────────────────────────────
-  // WAR MODE: undertrading is killing us (53 trades / 3.6K vol). Take more edges.
+  // Facts-only: crypto math, USGS sensors, tight Polymarket, resolved-source LLM.
   minEdge: {
-    deterministic: num("KARVE_MIN_EDGE_DETERMINISTIC", 0.015),
-    crossmarket: num("KARVE_MIN_EDGE_CROSSMARKET", 0.02),
-    favorite: num("KARVE_MIN_EDGE_FAVORITE", 0.06),
-    llm: num("KARVE_MIN_EDGE_LLM", 0.04),
+    deterministic: num("KARVE_MIN_EDGE_DETERMINISTIC", 0.03),
+    facts: num("KARVE_MIN_EDGE_FACTS", 0.04),
+    crossmarket: num("KARVE_MIN_EDGE_CROSSMARKET", 0.06),
+    favorite: num("KARVE_MIN_EDGE_FAVORITE", 1.0), // off — fake bump, not a real edge
+    llm: num("KARVE_MIN_EDGE_LLM", 0.08),
   },
 
-  // Lower floor = more trades. 0.55 still requires a clear favorite outcome.
-  minOutcomeProbability: num("KARVE_MIN_OUTCOME_PROB", 0.55),
-  minConfidence: num("KARVE_MIN_CONFIDENCE", 0.40),
+  minOutcomeProbability: num("KARVE_MIN_OUTCOME_PROB", 0.75),
+  minConfidence: num("KARVE_MIN_CONFIDENCE", 0.70),
 
-  favoriteMinProbability: num("KARVE_FAVORITE_MIN_PROB", 0.70),
+  favoriteMinProbability: num("KARVE_FAVORITE_MIN_PROB", 0.92),
 
-  // ── Position sizing — nearly full Kelly, fat concentration ────────────────
-  kellyFraction: num("KARVE_KELLY_FRACTION", 0.95),
-  edgeSizeBoost: num("KARVE_EDGE_SIZE_BOOST", 2.0),
-  maxFractionPerMarket: num("KARVE_MAX_PER_MARKET", 0.65),
-  maxFractionPerGroup: num("KARVE_MAX_PER_GROUP", 0.85),
-  cashFloorFraction: num("KARVE_CASH_FLOOR", 0.0),
+  kellyFraction: num("KARVE_KELLY_FRACTION", 0.55),
+  edgeSizeBoost: num("KARVE_EDGE_SIZE_BOOST", 1.0),
+  maxFractionPerMarket: num("KARVE_MAX_PER_MARKET", 0.35),
+  maxFractionPerGroup: num("KARVE_MAX_PER_GROUP", 0.50),
+  cashFloorFraction: num("KARVE_CASH_FLOOR", 0.02),
   minTradeTokens: num("KARVE_MIN_TRADE_TOKENS", 1),
 
   // ── Rotation (anti-thrash) ────────────────────────────────────────────────
@@ -63,7 +62,7 @@ export const CONFIG = {
   minEdgeRetainedAfterImpact: num("KARVE_MIN_EDGE_RETAINED", 0.35),
 
   // ── Scheduling ────────────────────────────────────────────────────────────
-  scanIntervalMs: num("KARVE_SCAN_INTERVAL_MS", 45_000),
+  scanIntervalMs: num("KARVE_SCAN_INTERVAL_MS", 2 * 60_000),
   sweepIntervalMs: num("KARVE_SWEEP_INTERVAL_MS", 5 * 60_000),
   hotWindowMs: num("KARVE_HOT_WINDOW_MS", 72 * 3_600_000),
 
