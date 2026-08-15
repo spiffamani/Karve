@@ -38,13 +38,12 @@ One page for operating the agent during the competition. The strategy details li
 
 ## Strategy levers (in `.env`, restart the agent to apply)
 
-**Current mode: WAR / all-in** — cash was ~0 so we couldn't trade. Agent now concentrates into the top 3 edges (sells the rest when cash-starved), Kelly ~0.95, up to 65% per market, scans every 45s, soonest markets first.
+**Current mode: hold winners, no thrash** — prior WAR rotate sold→rebought the same favorites (Jaguars/Mississippi) and burned LMSR spread. Now: sell only truly weak books, 2h rebuy cooldown after any sell, favorite needs real edge.
 
-- `KARVE_MIN_OUTCOME_PROB` (default 0.55)
-- `KARVE_KELLY_FRACTION` (default 0.95)
-- `KARVE_MAX_KEEP_POSITIONS` (default 3) — sell everything else when cash-starved
-- `KARVE_ROTATE_CASH_TRIGGER` (default 0.12)
-- `KARVE_MAX_PER_MARKET` / `KARVE_MAX_PER_GROUP` (0.65 / 0.85)
+- `KARVE_SELL_REBUY_COOLDOWN_MS` (default 2h) — blocks wash trades
+- `KARVE_ROTATE_SELL_EDGE` (default 0) — only sell when edge ≤ 0
+- `KARVE_MAX_SELLS_PER_SCAN` (default 1)
+- `KARVE_KELLY_FRACTION` (default 0.95) when cash exists to deploy
 
 ## Emergencies
 

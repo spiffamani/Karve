@@ -9,7 +9,7 @@ import { clamp } from "../util.js";
  * We buy them while discounted, across a wide pre-resolution window.
  */
 
-const CALIBRATION_BUMP = 0.05;
+const CALIBRATION_BUMP = 0.08; // must clear KARVE_MIN_EDGE_FAVORITE (0.06) with room for impact
 const MAX_ESTIMATE = 0.98;
 
 export function estimateFavorite(market: MarketSnapshot): ProbabilityEstimate | null {

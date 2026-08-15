@@ -33,9 +33,8 @@ async function reconcilePortfolio(delphi: Delphi): Promise<void> {
 }
 
 /**
- * WAR MODE capital concentration:
- * When cash is starved, rank open positions by live edge, KEEP the top N,
- * and SELL the rest so we can punch into fresher / stronger opportunities.
+ * Free cash only from truly weak holdings (edge ≤ 0 or conviction collapsed).
+ * Never mass-sell "non top-3" positives — that thrash burned spread on Jaguars/Mississippi.
  */
 async function rotateWeakPositions(delphi: Delphi, markets: Awaited<ReturnType<Delphi["listOpenMarkets"]>>): Promise<number> {
   const mark = await delphi.bankrollMark();
@@ -52,81 +51,86 @@ async function rotateWeakPositions(delphi: Delphi, markets: Awaited<ReturnType<D
     ourProb: number;
     edge: number;
   };
-  const ranked: Ranked[] = [];
+  const weakOnes: Ranked[] = [];
 
   for (const pos of open) {
     const market = byAddress.get(pos.market.toLowerCase());
     if (!market) continue;
     try {
       const estimate = await estimateMarket(market);
-      if (!estimate) {
-        // No estimate → treat as dead weight when cash-starved.
-        ranked.push({ market, pos, ourProb: 0, edge: -1 });
-        continue;
-      }
-      const ourProb = estimate.probs[pos.outcomeIdx] ?? 0;
-      const mktProb = market.impliedProbs[pos.outcomeIdx] ?? 0;
-      ranked.push({ market, pos, ourProb, edge: ourProb - mktProb });
+      const ourProb = estimate ? (estimate.probs[pos.outcomeIdx] ?? 0) : 0;
+      const mktProb = estimate ? (market.impliedProbs[pos.outcomeIdx] ?? 0) : 1;
+      const edge = estimate ? ourProb - mktProb : -1;
+      const weak = edge <= CONFIG.rotateSellEdge || ourProb <= CONFIG.rotateSellMaxProb;
+      if (weak) weakOnes.push({ market, pos, ourProb, edge });
     } catch (err) {
       journal("error", { where: "rotateWeakPositions.score", market: pos.market, err: String((err as Error).message).slice(0, 200) });
     }
   }
 
-  ranked.sort((a, b) => b.edge - a.edge);
-  const keepKeys = new Set(
-    ranked.slice(0, CONFIG.maxKeepPositions).map((r) => `${r.pos.market.toLowerCase()}:${r.pos.outcomeIdx}`),
-  );
+  // Dump worst first, at most one (or configured) per scan — stop the churn.
+  weakOnes.sort((a, b) => a.edge - b.edge);
+  const toSell = weakOnes.slice(0, CONFIG.maxSellsPerScan);
 
   let freed = 0;
-  for (const r of ranked) {
-    const key = `${r.pos.market.toLowerCase()}:${r.pos.outcomeIdx}`;
-    const isKeeper = keepKeys.has(key);
-    const weak = r.edge <= CONFIG.rotateSellEdge || r.ourProb <= CONFIG.rotateSellMaxProb;
-    // Keepers only sell if truly weak; non-keepers always sell to concentrate.
-    if (isKeeper && !weak) continue;
-    if (!isKeeper || weak) {
-      try {
-        if (CONFIG.dryRun) {
-          journal("decision", {
-            note: isKeeper ? "rotate would sell weak keeper" : "rotate would sell to concentrate",
-            market: r.market.address,
-            outcomeIdx: r.pos.outcomeIdx,
-            ourProb: r.ourProb,
-            edge: r.edge,
-          });
-          continue;
-        }
-        const { transactionHash, tokensOut } = await delphi.sellShares(
-          r.pos.market as Address,
-          r.pos.outcomeIdx,
-          r.pos.shares,
-        );
-        const amount = tokensToNumber(tokensOut);
-        freed += amount;
-        journal("trade", {
-          action: "sell",
+  for (const r of toSell) {
+    try {
+      if (CONFIG.dryRun) {
+        journal("decision", {
+          note: "rotate would sell weak only",
           market: r.market.address,
-          question: r.market.question.slice(0, 140),
-          outcome: r.market.outcomes[r.pos.outcomeIdx],
           outcomeIdx: r.pos.outcomeIdx,
           ourProb: r.ourProb,
           edge: r.edge,
-          tokensOut: amount,
-          transactionHash,
-          reason: isKeeper ? "weak keeper" : "concentrate into top edges",
         });
-        await notifyDiscord(
-          `Karve SOLD: "${r.market.question.slice(0, 100)}" → ${r.market.outcomes[r.pos.outcomeIdx]} ` +
-          `(+${amount.toFixed(1)} TST, edge ${(r.edge * 100).toFixed(1)}%)`,
-        );
-      } catch (err) {
-        journal("error", { where: "rotateWeakPositions.sell", market: r.pos.market, err: String((err as Error).message).slice(0, 300) });
+        continue;
       }
+      const { transactionHash, tokensOut } = await delphi.sellShares(
+        r.pos.market as Address,
+        r.pos.outcomeIdx,
+        r.pos.shares,
+      );
+      const amount = tokensToNumber(tokensOut);
+      freed += amount;
+      noteSold(r.market.address);
+      journal("trade", {
+        action: "sell",
+        market: r.market.address,
+        question: r.market.question.slice(0, 140),
+        outcome: r.market.outcomes[r.pos.outcomeIdx],
+        outcomeIdx: r.pos.outcomeIdx,
+        ourProb: r.ourProb,
+        edge: r.edge,
+        tokensOut: amount,
+        transactionHash,
+        reason: "weak edge / low conviction — free cash",
+      });
+      await notifyDiscord(
+        `Karve SOLD (weak only): "${r.market.question.slice(0, 100)}" → ${r.market.outcomes[r.pos.outcomeIdx]} ` +
+        `(+${amount.toFixed(1)} TST, edge ${(r.edge * 100).toFixed(1)}%)`,
+      );
+    } catch (err) {
+      journal("error", { where: "rotateWeakPositions.sell", market: r.pos.market, err: String((err as Error).message).slice(0, 300) });
     }
   }
 
   if (freed > 0) await reconcilePortfolio(delphi);
   return freed;
+}
+
+/** Markets we sold recently — block immediate rebuy (anti wash-trade). */
+const recentlySold = new Map<string, number>();
+function noteSold(market: string): void {
+  recentlySold.set(market.toLowerCase(), Date.now());
+}
+function isInSellCooldown(market: string): boolean {
+  const at = recentlySold.get(market.toLowerCase());
+  if (at === undefined) return false;
+  if (Date.now() - at >= CONFIG.sellRebuyCooldownMs) {
+    recentlySold.delete(market.toLowerCase());
+    return false;
+  }
+  return true;
 }
 
 /** In dry-run no position is recorded, so remember session decisions to avoid re-logging the same trade every scan. */
@@ -172,6 +176,10 @@ async function scanCycle(delphi: Delphi): Promise<void> {
 
   for (const market of markets) {
     try {
+      if (isInSellCooldown(market.address)) {
+        journal("skip", { market: market.address, question: market.question.slice(0, 140), reason: "sell-rebuy cooldown (anti-thrash)" });
+        continue;
+      }
       const estimate = await estimateMarket(market);
       if (!estimate) continue;
       evaluated++;

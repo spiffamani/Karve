@@ -28,7 +28,7 @@ export const CONFIG = {
   minEdge: {
     deterministic: num("KARVE_MIN_EDGE_DETERMINISTIC", 0.015),
     crossmarket: num("KARVE_MIN_EDGE_CROSSMARKET", 0.02),
-    favorite: num("KARVE_MIN_EDGE_FAVORITE", 0.015),
+    favorite: num("KARVE_MIN_EDGE_FAVORITE", 0.06),
     llm: num("KARVE_MIN_EDGE_LLM", 0.04),
   },
 
@@ -46,14 +46,17 @@ export const CONFIG = {
   cashFloorFraction: num("KARVE_CASH_FLOOR", 0.0),
   minTradeTokens: num("KARVE_MIN_TRADE_TOKENS", 1),
 
-  // ── Rotation / concentration ──────────────────────────────────────────────
-  // If cash below this fraction of bankroll, sell weak books to redeploy.
-  rotateCashTriggerFraction: num("KARVE_ROTATE_CASH_TRIGGER", 0.12),
-  // Sell held outcome when edge ≤ this OR ourProb ≤ rotateSellMaxProb.
-  rotateSellEdge: num("KARVE_ROTATE_SELL_EDGE", 0.03),
-  rotateSellMaxProb: num("KARVE_ROTATE_SELL_MAX_PROB", 0.55),
-  // After ranking open positions by edge, keep only this many; sell the rest.
-  maxKeepPositions: num("KARVE_MAX_KEEP_POSITIONS", 3),
+  // ── Rotation (anti-thrash) ────────────────────────────────────────────────
+  // Only free cash when truly starved. Do NOT sell healthy positives just to
+  // "concentrate" — that caused sell→buy loops (Jaguars/Mississippi) and ate spread.
+  rotateCashTriggerFraction: num("KARVE_ROTATE_CASH_TRIGGER", 0.05),
+  // Sell only when edge is gone / tiny (not the synthetic +5% favorite bump).
+  rotateSellEdge: num("KARVE_ROTATE_SELL_EDGE", 0.0),
+  rotateSellMaxProb: num("KARVE_ROTATE_SELL_MAX_PROB", 0.50),
+  // After a sell, refuse rebuy of that market (ms) so we can't wash-trade ourselves.
+  sellRebuyCooldownMs: num("KARVE_SELL_REBUY_COOLDOWN_MS", 2 * 60 * 60_000),
+  // Max positions to dump per scan when cash-starved (worst edges first).
+  maxSellsPerScan: num("KARVE_MAX_SELLS_PER_SCAN", 1),
 
   // ── Execution ─────────────────────────────────────────────────────────────
   slippageBps: BigInt(num("KARVE_SLIPPAGE_BPS", 500)),
