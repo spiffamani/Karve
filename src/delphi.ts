@@ -2,7 +2,7 @@ import { DelphiClient, DYNAMIC_PARIMUTUEL_GATEWAY_ABI } from "@gensyn-ai/gensyn-
 import type { Abi, PublicClient } from "viem";
 import { CONFIG } from "./config.js";
 import type { Address, MarketSnapshot, MarketStatus } from "./types.js";
-import { journal } from "./journal.js";
+import { journal, loadState, saveState } from "./journal.js";
 import { sharesToNumber, tokensToNumber, withRetry } from "./util.js";
 
 const COLLATERAL_BY_NETWORK: Record<string, Address> = {
@@ -287,8 +287,11 @@ export class Delphi {
       byMarket.set(p.market, list);
     }
 
+    const dead = loadState<Record<string, true>>("dead-markets", {});
+    let deadDirty = false;
     let recovered = 0;
     for (const [market, outcomeIndices] of byMarket) {
+      if (dead[market.toLowerCase()]) continue;
       try {
         const status = await withRetry("getMarketStatus", () => this.client.getMarketStatus(market));
         if (status === "settled") {
@@ -298,11 +301,15 @@ export class Delphi {
             const quote = await this.client.quoteRedeem({ marketAddress: market });
             quoteTokens = BigInt(quote.tokensOut);
           } catch {
-            journal("skip", { market, reason: "settled but no winning shares to redeem (dead position)" });
+            dead[market.toLowerCase()] = true;
+            deadDirty = true;
+            journal("skip", { market, reason: "settled but no winning shares — marked dead, will not retry" });
             continue;
           }
           if (quoteTokens === 0n) {
-            journal("skip", { market, reason: "settled redeem quote is zero" });
+            dead[market.toLowerCase()] = true;
+            deadDirty = true;
+            journal("skip", { market, reason: "settled redeem quote is zero — marked dead" });
             continue;
           }
           const { tokensOut, transactionHash } = await withRetry("redeemMarket", () =>
@@ -319,6 +326,7 @@ export class Delphi {
         journal("error", { where: "settlementSweep", market, err: String((err as Error).message).slice(0, 300) });
       }
     }
+    if (deadDirty) saveState("dead-markets", dead);
     return recovered;
   }
 

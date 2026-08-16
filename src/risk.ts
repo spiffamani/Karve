@@ -102,22 +102,21 @@ export function decideTrade(
   }
 
   const kellyStar = (q - p) / (1 - p);
-  // Confidence dampens less hard than before (sqrt) so good edges still punch.
-  // Fat edges get an extra size boost for catch-up aggression.
   let fraction = kellyStar * CONFIG.kellyFraction * Math.sqrt(estimate.confidence);
   fraction *= 1 + CONFIG.edgeSizeBoost * bestEdge;
   if (fraction <= 0) return { action: "skip", reason: "non-positive Kelly fraction", market: market.address };
 
-  let budget = fraction * bankroll;
+  // When we will not sell open books, wealth in shares is not spendable.
+  // Size against cash so we cannot dump the whole bankroll into the first "edge".
+  const sizingBase = CONFIG.allowRotation ? bankroll : ctx.cashTokens;
+  let budget = fraction * sizingBase;
 
-  // Per-market cap (existing exposure counts).
   const marketExposure = positionCost(ctx.portfolio.positions.filter((x) => x.market === market.address));
-  budget = Math.min(budget, CONFIG.maxFractionPerMarket * bankroll - marketExposure);
+  budget = Math.min(budget, CONFIG.maxFractionPerMarket * sizingBase - marketExposure);
 
-  // Correlation-group cap.
   const group = groupKey(market, estimate);
   const groupExposure = positionCost(ctx.portfolio.positions.filter((x) => x.group === group));
-  budget = Math.min(budget, CONFIG.maxFractionPerGroup * bankroll - groupExposure);
+  budget = Math.min(budget, CONFIG.maxFractionPerGroup * sizingBase - groupExposure);
 
   // Cash floor — keep a slice of LIQUID cash, not of total bankroll.
   // (Flooring against full MTM bankroll stranded us when most capital was in open positions.)

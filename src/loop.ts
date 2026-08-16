@@ -37,6 +37,7 @@ async function reconcilePortfolio(delphi: Delphi): Promise<void> {
  * Never mass-sell "non top-3" positives — that thrash burned spread on Jaguars/Mississippi.
  */
 async function rotateWeakPositions(delphi: Delphi, markets: Awaited<ReturnType<Delphi["listOpenMarkets"]>>): Promise<number> {
+  if (!CONFIG.allowRotation) return 0;
   const mark = await delphi.bankrollMark();
   if (mark.bankroll <= 0) return 0;
   if (mark.cash / mark.bankroll >= CONFIG.rotateCashTriggerFraction) return 0;
@@ -166,6 +167,12 @@ async function scanCycle(delphi: Delphi): Promise<void> {
     rotated: Number(rotated.toFixed(2)),
   });
 
+  // No spendable TST → do not evaluate/buy. Remaining shares are the bankroll; hold them.
+  if (mark.cash < CONFIG.minTradeTokens) {
+    journal("scan", { done: true, evaluated: 0, traded: 0, cashLeft: mark.cash, note: "hold — no cash to buy" });
+    return;
+  }
+
   const portfolio = loadPortfolio();
   let evaluated = 0;
   let traded = 0;
@@ -256,6 +263,8 @@ export async function runAgent(opts: { once: boolean }): Promise<void> {
     dryRun: CONFIG.dryRun,
     cash: balances.collateral,
     eth: balances.eth,
+    allowRotation: CONFIG.allowRotation,
+    kellyFraction: CONFIG.kellyFraction,
   });
   console.log(`\nKarve agent | wallet ${address} | ${CONFIG.network} | ${CONFIG.dryRun ? "DRY-RUN (no real trades)" : "LIVE TRADING"}`);
   console.log(`Balances: ${balances.collateral.toFixed(2)} collateral, ${balances.eth.toFixed(6)} ETH\n`);

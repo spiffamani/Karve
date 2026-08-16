@@ -38,16 +38,15 @@ export const CONFIG = {
 
   favoriteMinProbability: num("KARVE_FAVORITE_MIN_PROB", 0.92),
 
-  kellyFraction: num("KARVE_KELLY_FRACTION", 0.55),
-  edgeSizeBoost: num("KARVE_EDGE_SIZE_BOOST", 1.0),
-  maxFractionPerMarket: num("KARVE_MAX_PER_MARKET", 0.35),
-  maxFractionPerGroup: num("KARVE_MAX_PER_GROUP", 0.50),
-  cashFloorFraction: num("KARVE_CASH_FLOOR", 0.02),
+  kellyFraction: num("KARVE_KELLY_FRACTION", 0.30),
+  edgeSizeBoost: num("KARVE_EDGE_SIZE_BOOST", 0.5),
+  maxFractionPerMarket: num("KARVE_MAX_PER_MARKET", 0.25),
+  maxFractionPerGroup: num("KARVE_MAX_PER_GROUP", 0.35),
+  cashFloorFraction: num("KARVE_CASH_FLOOR", 0.05),
   minTradeTokens: num("KARVE_MIN_TRADE_TOKENS", 1),
 
-  // ── Rotation (anti-thrash) ────────────────────────────────────────────────
-  // Only free cash when truly starved. Do NOT sell healthy positives just to
-  // "concentrate" — that caused sell→buy loops (Jaguars/Mississippi) and ate spread.
+  // Rotation is OFF. Selling the last bankroll to "free cash" is how we hit 99th.
+  allowRotation: bool("KARVE_ALLOW_ROTATION", false),
   rotateCashTriggerFraction: num("KARVE_ROTATE_CASH_TRIGGER", 0.05),
   // Sell only when edge is gone / tiny (not the synthetic +5% favorite bump).
   rotateSellEdge: num("KARVE_ROTATE_SELL_EDGE", 0.0),
@@ -62,14 +61,14 @@ export const CONFIG = {
   minEdgeRetainedAfterImpact: num("KARVE_MIN_EDGE_RETAINED", 0.35),
 
   // ── Scheduling ────────────────────────────────────────────────────────────
-  scanIntervalMs: num("KARVE_SCAN_INTERVAL_MS", 2 * 60_000),
+  scanIntervalMs: num("KARVE_SCAN_INTERVAL_MS", 3 * 60_000),
   sweepIntervalMs: num("KARVE_SWEEP_INTERVAL_MS", 5 * 60_000),
   hotWindowMs: num("KARVE_HOT_WINDOW_MS", 72 * 3_600_000),
 
   // ── Safety ────────────────────────────────────────────────────────────────
   dryRun: bool("KARVE_DRY_RUN", true),
   minEthReserve: num("KARVE_MIN_ETH_RESERVE", 0.0005),
-  maxOpenPositions: num("KARVE_MAX_OPEN_POSITIONS", 60),
+  maxOpenPositions: num("KARVE_MAX_OPEN_POSITIONS", 20),
 
   // ── Optional integrations ────────────────────────────────────────────────
   geminiApiKey: process.env.GEMINI_API_KEY ?? "",

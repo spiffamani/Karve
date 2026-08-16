@@ -1,4 +1,5 @@
 import { CONFIG } from "./config.js";
+import { acquireAgentLock, releaseAgentLock } from "./lock.js";
 import { runAgent } from "./loop.js";
 import { journal } from "./journal.js";
 
@@ -24,6 +25,11 @@ if (missing.length > 0) {
   console.error("Copy .env.example to .env and fill them in.");
   process.exit(1);
 }
+
+acquireAgentLock();
+process.on("exit", releaseAgentLock);
+process.on("SIGINT", () => { releaseAgentLock(); process.exit(0); });
+process.on("SIGTERM", () => { releaseAgentLock(); process.exit(0); });
 
 process.on("unhandledRejection", (reason) => {
   journal("error", { where: "unhandledRejection", err: String(reason).slice(0, 300) });

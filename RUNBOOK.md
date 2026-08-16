@@ -38,12 +38,11 @@ One page for operating the agent during the competition. The strategy details li
 
 ## Strategy levers (in `.env`, restart the agent to apply)
 
-**Current mode: facts only** — Gemini no longer forecasts open events. Favorite bump is off. Trades need a real number (crypto model, USGS, tight Polymarket match, or a source page on an already-finished event). Hold until settlement; don't sell winners for cash.
+**Recovery mode (rank 99):** do not sell remaining positions. Do not buy until cash > 0. One process only (`data/agent.lock`). When cash returns, small Kelly (0.30) on crypto/USGS/tight Polymarket only.
 
-- `KARVE_MIN_EDGE_FAVORITE=1.0` — disables fake +5% harvest
-- `KARVE_MIN_EDGE_FACTS` — USGS quakes / Mississippi discharge
-- `KARVE_KELLY_FRACTION=0.55` — size real edges, not 0.95 on guesses
-- `KARVE_SELL_REBUY_COOLDOWN_MS` — 2h block after any sell
+- `KARVE_ALLOW_ROTATION=false` — never sell to "free cash"
+- `KARVE_KELLY_FRACTION=0.30`
+- `KARVE_MIN_EDGE_FAVORITE=1.0` — fake harvest off
 
 ## Emergencies
 
@@ -51,6 +50,7 @@ One page for operating the agent during the competition. The strategy details li
 - **Out of gas**: bridge more Sepolia ETH; the agent resumes automatically.
 - **A signal looks systematically wrong** (e.g. every crossmarket trade losing): set its `KARVE_MIN_EDGE_*` to `1` (disables that module) and restart. No code changes needed.
 - **Kill switch**: Ctrl+C in the agent window. Open positions are safe — they settle on-chain regardless of whether the agent is running.
+- **Two laptops**: `data/agent.lock` only blocks a second process on the *same* machine. Partner and you must not both run live. One wallet, one process.
 
 ## Rules we must not break
 

@@ -141,11 +141,10 @@ export async function estimateLlm(market: MarketSnapshot): Promise<ProbabilityEs
 
   const prompt = [
     `Today is ${new Date().toUTCString()}.`,
-    `You are a careful probabilistic forecaster answering a prediction-market question.`,
-    `FIRST, determine whether the outcome is ALREADY KNOWN: many questions concern events that already`,
-    `finished (a game already played, a recorded temperature, a published ranking).`,
-    `If the outcome is already determined by the evidence, assign ~0.95-0.97 to the correct outcome (never 1.0).`,
-    `Only if the event is genuinely undecided, forecast it probabilistically.`,
+    `You are a fact-checker, not a forecaster.`,
+    `Determine whether the outcome is ALREADY KNOWN from the official sources below.`,
+    `If the outcome is already determined, assign ~0.95-0.97 to the correct outcome (never 1.0) and alreadyResolved=true.`,
+    `If the event is still undecided, set alreadyResolved=false and put equal-ish probabilities — do not guess.`,
     usedSources
       ? `CURRENT CONTENT OF THE MARKET'S OFFICIAL RESOLUTION SOURCES (fetched minutes ago — treat as ground truth):\n${sourceContext}`
       : `No source content could be fetched. Reason only from well-established base rates; if the answer depends on a recent event you cannot verify, spread probabilities toward uncertainty and set alreadyResolved=false.`,
